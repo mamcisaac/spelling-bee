@@ -1,246 +1,221 @@
 /* ===========================================================================
    words.js — Word lists for the Spelling Bee game
    ---------------------------------------------------------------------------
-   Two learners:
-     • Alice — 8 yrs, Grade 2, Canada. Real spelling drill (types the word).
-               Canadian spellings used where relevant (colour, favourite...).
-               Organised into "belts" (karate-style levels) that get harder.
-     • Eddie — 4 yrs, pre-reader. Knows: stop, no, on, off, back. Can sound out
-               simple CVC words. He builds words by TAPPING letter tiles, not
-               typing. Words are short and decodable.
+   Alice — 8 yrs, Grade 2, Canada. A real spelling drill (types or says the
+           word). Canadian spellings (colour, favourite, neighbour…). Organised
+           into "belts" by spelling pattern, the way Grade-2 lists usually are.
+           Every word has a kid-friendly sentence — the game ALWAYS introduces a
+           word inside its sentence ("Your word is 'between'. As in, sit between
+           your two friends.").
+   Eddie — 4 yrs, pre-reader. Builds short decodable words by tapping tiles.
 
-   Each word entry:
-     { w: "cat", s: "The cat sat on the soft mat." }
-       w = the word (lowercase)
-       s = a kid-friendly sentence using the word (optional, for "use it in a
-           sentence" audio). If omitted, the game makes a simple one.
+   Each entry: { w: "word", s: "A sentence using the word." }
    =========================================================================== */
 (function () {
   "use strict";
   window.SB = window.SB || {};
 
-  /* ---- Alice: leveled belts ------------------------------------------- */
+  /* ---- Alice: Grade-2 belts, by spelling pattern ---------------------- */
   const aliceBelts = [
     {
       id: "white", name: "White Belt", emoji: "⬜", color: "#f4f4f8",
-      blurb: "Short and snappy words. You can do it!",
+      blurb: "Short vowel words. A warm-up!",
       words: [
-        { w: "cat", s: "The cat sat on the soft mat." },
-        { w: "dog", s: "My dog can run very fast." },
-        { w: "sun", s: "The sun is big and bright." },
-        { w: "hat", s: "Put the red hat on your head." },
-        { w: "bed", s: "I sleep in my cozy bed." },
-        { w: "pig", s: "The pig rolled in the mud." },
-        { w: "top", s: "The toy top can spin and spin." },
-        { w: "cup", s: "I drink milk from my cup." },
-        { w: "red", s: "The apple is bright red." },
-        { w: "box", s: "The cat hid in the box." },
-        { w: "fun", s: "We had so much fun today." },
-        { w: "ten", s: "I can count to ten." },
-        { w: "jam", s: "I like jam on my toast." },
-        { w: "bug", s: "A little bug crawled on the leaf." },
-        { w: "net", s: "We caught the fish in a net." },
-        { w: "mud", s: "My boots are full of mud." }
+        { w: "hand", s: "Raise your hand to answer." },
+        { w: "jump", s: "I can jump over the puddle." },
+        { w: "milk", s: "I drink milk with my lunch." },
+        { w: "fast", s: "The cheetah runs very fast." },
+        { w: "last", s: "She was last in line." },
+        { w: "soft", s: "The kitten has soft fur." },
+        { w: "nest", s: "The bird built a nest." },
+        { w: "gift", s: "I wrapped a gift for you." },
+        { w: "lamp", s: "Turn on the lamp to read." },
+        { w: "desk", s: "My books are on my desk." },
+        { w: "pond", s: "The ducks swim in the pond." },
+        { w: "wind", s: "The wind blew my hat away." },
+        { w: "sand", s: "We built a castle in the sand." },
+        { w: "best", s: "You did your very best." }
       ]
     },
     {
       id: "yellow", name: "Yellow Belt", emoji: "🟨", color: "#ffe44d",
-      blurb: "Sneaky little words we use every day.",
+      blurb: "Tricky words we use every day.",
       words: [
-        { w: "the", s: "The dog ran to the park." },
-        { w: "was", s: "It was a sunny day." },
-        { w: "said", s: "Mom said it is time for bed." },
-        { w: "they", s: "They went to the store." },
-        { w: "have", s: "I have two red mittens." },
-        { w: "with", s: "Come and play with me." },
-        { w: "this", s: "This is my favourite book." },
-        { w: "that", s: "That puppy is so soft." },
-        { w: "what", s: "What is your name?" },
-        { w: "when", s: "When can we go outside?" },
-        { w: "them", s: "I gave the toys to them." },
-        { w: "were", s: "We were happy at the party." },
-        { w: "your", s: "Where is your jacket?" },
-        { w: "here", s: "Please come over here." },
-        { w: "there", s: "Your shoes are over there." },
-        { w: "from", s: "This card is from my friend." }
+        { w: "said", s: "She said hello to me." },
+        { w: "again", s: "Let's try it again." },
+        { w: "because", s: "I smiled because I was happy." },
+        { w: "friend", s: "My best friend is very kind." },
+        { w: "people", s: "Many people came to the show." },
+        { w: "before", s: "Wash your hands before lunch." },
+        { w: "around", s: "We walked around the park." },
+        { w: "about", s: "This book is about space." },
+        { w: "would", s: "Would you like a snack?" },
+        { w: "could", s: "I could hear the birds singing." },
+        { w: "should", s: "We should share our toys." },
+        { w: "every", s: "I read every single night." },
+        { w: "pretty", s: "The garden is so pretty." },
+        { w: "school", s: "I walk to school each day." }
       ]
     },
     {
       id: "orange", name: "Orange Belt", emoji: "🟧", color: "#ff9f3a",
       blurb: "Two letters, one sound: sh, ch, th, wh.",
       words: [
-        { w: "ship", s: "The big ship sailed on the sea." },
-        { w: "shop", s: "We went to the toy shop." },
-        { w: "fish", s: "The fish swam in the pond." },
-        { w: "wish", s: "I made a wish on a star." },
-        { w: "chip", s: "I ate one crunchy chip." },
-        { w: "chin", s: "He bumped his chin." },
-        { w: "chop", s: "Dad will chop the carrots." },
-        { w: "much", s: "Thank you so much!" },
-        { w: "such", s: "It was such a fun day." },
-        { w: "thin", s: "The ice was very thin." },
-        { w: "bath", s: "I take a bath at night." },
-        { w: "math", s: "I like to do math at school." },
-        { w: "path", s: "We walked down the path." },
-        { w: "wheel", s: "The wheel on the bike is round." },
-        { w: "white", s: "The snow is fluffy and white." },
-        { w: "thank", s: "I say thank you to my friend." }
+        { w: "which", s: "Which one do you want?" },
+        { w: "while", s: "Please read while I cook." },
+        { w: "these", s: "I really like these shoes." },
+        { w: "those", s: "Those are my warm mittens." },
+        { w: "third", s: "She came in third place." },
+        { w: "teeth", s: "I brush my teeth every morning." },
+        { w: "tooth", s: "I lost a wobbly tooth." },
+        { w: "chair", s: "Please pull up a chair." },
+        { w: "cheese", s: "I like cheese on my toast." },
+        { w: "brush", s: "Brush your hair before school." },
+        { w: "fresh", s: "The bread smells fresh." },
+        { w: "shadow", s: "I saw my shadow on the wall." },
+        { w: "weather", s: "The weather is sunny today." },
+        { w: "north", s: "We drove north to the lake." }
       ]
     },
     {
       id: "green", name: "Green Belt", emoji: "🟩", color: "#5ad17a",
-      blurb: "Two letters at the start: blends!",
+      blurb: "Letters that blend together.",
       words: [
-        { w: "stop", s: "We stop at the red light." },
-        { w: "step", s: "Watch your step on the stairs." },
-        { w: "spin", s: "Watch the top spin around." },
-        { w: "swim", s: "I can swim in the pool." },
-        { w: "frog", s: "The green frog can hop." },
-        { w: "drum", s: "I can bang on the drum." },
-        { w: "clap", s: "Let's clap our hands." },
-        { w: "flag", s: "The flag is red and white." },
-        { w: "grab", s: "Grab your bag and let's go." },
-        { w: "plan", s: "We made a fun plan." },
-        { w: "slip", s: "Be careful, don't slip!" },
-        { w: "trip", s: "We went on a long trip." },
-        { w: "crab", s: "The crab walked on the sand." },
-        { w: "glad", s: "I am glad to see you." },
-        { w: "sled", s: "We rode the sled down the hill." },
-        { w: "snap", s: "I can snap my fingers." }
+        { w: "street", s: "We live on a quiet street." },
+        { w: "spring", s: "Flowers bloom in the spring." },
+        { w: "strong", s: "An ox is very strong." },
+        { w: "splash", s: "Don't splash in the bathtub." },
+        { w: "plant", s: "We will plant a little seed." },
+        { w: "branch", s: "A bird sat on the branch." },
+        { w: "ground", s: "The ball fell to the ground." },
+        { w: "present", s: "I got a birthday present." },
+        { w: "problem", s: "We solved the problem together." },
+        { w: "crunch", s: "I love the crunch of an apple." },
+        { w: "blank", s: "Fill in the blank space." },
+        { w: "twist", s: "Twist the lid to open it." },
+        { w: "frost", s: "There was frost on the grass." },
+        { w: "sprint", s: "I sprint to the finish line." }
       ]
     },
     {
       id: "blue", name: "Blue Belt", emoji: "🟦", color: "#4aa3ff",
-      blurb: "Magic 'e' makes the vowel say its name!",
+      blurb: "Magic 'e' makes the vowel say its name.",
       words: [
-        { w: "cake", s: "We baked a yummy cake." },
-        { w: "name", s: "Please write your name." },
-        { w: "game", s: "Let's play a fun game." },
-        { w: "bike", s: "I can ride my new bike." },
-        { w: "kite", s: "The kite flew up high." },
-        { w: "time", s: "It is time for lunch." },
-        { w: "nose", s: "A bee landed on my nose." },
-        { w: "home", s: "We walked back home." },
-        { w: "bone", s: "The dog chewed a big bone." },
-        { w: "cute", s: "The puppy is so cute." },
-        { w: "rope", s: "We can skip with the rope." },
-        { w: "hope", s: "I hope it is sunny tomorrow." },
-        { w: "late", s: "Don't be late for school." },
-        { w: "gate", s: "Please close the gate." },
-        { w: "ride", s: "Let's go for a ride." },
-        { w: "five", s: "I have five fingers on one hand." }
+        { w: "place", s: "This is a quiet place to read." },
+        { w: "space", s: "There is space for one more." },
+        { w: "plane", s: "The plane flew up high." },
+        { w: "grade", s: "I am in grade two." },
+        { w: "write", s: "I can write my own name." },
+        { w: "drive", s: "Dad will drive us home." },
+        { w: "smile", s: "You have a lovely smile." },
+        { w: "prize", s: "She won first prize." },
+        { w: "brave", s: "The brave dog barked loudly." },
+        { w: "shape", s: "A circle is a round shape." },
+        { w: "slide", s: "Let's go down the slide." },
+        { w: "stone", s: "I found a smooth stone." },
+        { w: "flame", s: "The candle has a tiny flame." },
+        { w: "escape", s: "The bunny tried to escape." }
       ]
     },
     {
       id: "purple", name: "Purple Belt", emoji: "🟪", color: "#a96bff",
       blurb: "Two vowels go walking: vowel teams.",
       words: [
-        { w: "rain", s: "The rain made big puddles." },
-        { w: "train", s: "The train went down the track." },
-        { w: "play", s: "Let's go out and play." },
-        { w: "day", s: "It is a beautiful day." },
-        { w: "tree", s: "A bird sat in the tree." },
-        { w: "green", s: "The grass is bright green." },
-        { w: "boat", s: "The boat floated on the lake." },
-        { w: "road", s: "We drove down the long road." },
-        { w: "coat", s: "Wear your warm coat outside." },
-        { w: "snow", s: "The snow is cold and white." },
-        { w: "feet", s: "I have two feet." },
-        { w: "meet", s: "Let's meet at the park." },
-        { w: "leaf", s: "A red leaf fell from the tree." },
-        { w: "seed", s: "We planted a tiny seed." },
-        { w: "moon", s: "The moon is bright tonight." },
-        { w: "rainbow", s: "I saw a rainbow after the rain." }
+        { w: "between", s: "Sit between your two friends." },
+        { w: "dream", s: "I had a happy dream last night." },
+        { w: "clean", s: "Please clean your bedroom." },
+        { w: "please", s: "May I please go outside?" },
+        { w: "leave", s: "We leave for the trip at noon." },
+        { w: "teacher", s: "My teacher is really funny." },
+        { w: "reach", s: "I can reach the top shelf." },
+        { w: "beach", s: "We built sandcastles at the beach." },
+        { w: "float", s: "The little boat will float." },
+        { w: "follow", s: "Follow me to the door." },
+        { w: "yellow", s: "The sun is bright yellow." },
+        { w: "window", s: "Open the window for fresh air." },
+        { w: "sleep", s: "I sleep for ten hours." },
+        { w: "green", s: "The leaves are green in summer." }
       ]
     },
     {
       id: "brown", name: "Brown Belt", emoji: "🟫", color: "#b5793f",
-      blurb: "The bossy 'r' words.",
+      blurb: "The bossy 'r', and words ending in -er.",
       words: [
-        { w: "car", s: "We drove the car to town." },
-        { w: "star", s: "I see a star in the sky." },
-        { w: "far", s: "The store is not far away." },
-        { w: "for", s: "This gift is for you." },
-        { w: "corn", s: "I like to eat sweet corn." },
-        { w: "born", s: "The baby was just born." },
-        { w: "her", s: "I gave her a hug." },
-        { w: "bird", s: "The bird sang a sweet song." },
-        { w: "girl", s: "The girl rode her bike." },
-        { w: "turn", s: "It is my turn to play." },
-        { w: "hurt", s: "I did not get hurt." },
-        { w: "park", s: "We played at the park." },
-        { w: "dark", s: "It gets dark at night." },
-        { w: "fork", s: "I eat with a fork." },
-        { w: "horn", s: "The car has a loud horn." },
-        { w: "first", s: "I came in first place!" }
+        { w: "under", s: "The cat hid under the bed." },
+        { w: "water", s: "I drink lots of water." },
+        { w: "sister", s: "My sister is older than me." },
+        { w: "brother", s: "My brother is very funny." },
+        { w: "after", s: "We play outside after school." },
+        { w: "never", s: "I never give up." },
+        { w: "river", s: "We fished in the river." },
+        { w: "dinner", s: "We eat dinner at six o'clock." },
+        { w: "winter", s: "It snows a lot in winter." },
+        { w: "party", s: "We had a birthday party." },
+        { w: "story", s: "Read me a bedtime story." },
+        { w: "world", s: "The world is a big place." },
+        { w: "learn", s: "I want to learn to swim." },
+        { w: "garden", s: "We grow carrots in the garden." }
       ]
     },
     {
       id: "red", name: "Red Belt", emoji: "🟥", color: "#ff5a5a",
-      blurb: "Big-kid words you use all the time.",
+      blurb: "Noisy vowels: oi, oy, ou, ow.",
       words: [
-        { w: "friend", s: "My friend came to play." },
-        { w: "because", s: "I smiled because I was happy." },
-        { w: "people", s: "Many people came to the fair." },
-        { w: "little", s: "The little kitten is soft." },
-        { w: "again", s: "Let's read it again." },
-        { w: "water", s: "I drink lots of water." },
-        { w: "mother", s: "My mother makes great soup." },
-        { w: "father", s: "My father reads to me." },
-        { w: "sister", s: "My sister is funny." },
-        { w: "school", s: "I walk to school each day." },
-        { w: "please", s: "May I please have more?" },
-        { w: "would", s: "Would you like to play?" },
-        { w: "could", s: "I could jump very high." },
-        { w: "should", s: "We should clean up now." },
-        { w: "pretty", s: "The flower is so pretty." },
-        { w: "before", s: "Wash your hands before you eat." }
+        { w: "moist", s: "The chocolate cake is soft and moist." },
+        { w: "point", s: "Point to the right answer." },
+        { w: "join", s: "Come and join the game." },
+        { w: "coin", s: "I found a shiny coin." },
+        { w: "soil", s: "Plants grow in good soil." },
+        { w: "voice", s: "Please use your inside voice." },
+        { w: "noise", s: "The truck made a loud noise." },
+        { w: "enjoy", s: "I really enjoy painting." },
+        { w: "found", s: "I found my lost shoe." },
+        { w: "round", s: "The wheel is perfectly round." },
+        { w: "town", s: "We drove into town." },
+        { w: "brown", s: "The bear has thick brown fur." },
+        { w: "crown", s: "The queen wears a gold crown." },
+        { w: "flower", s: "I picked a yellow flower." }
       ]
     },
     {
       id: "black", name: "Black Belt", emoji: "⬛", color: "#3a3a4a",
-      blurb: "Tricky champion words. True Canadian spelling!",
+      blurb: "Champion words — true Canadian spelling!",
       words: [
-        { w: "colour", s: "Blue is my favourite colour." },
         { w: "favourite", s: "Pizza is my favourite food." },
-        { w: "neighbour", s: "Our neighbour has a friendly dog." },
-        { w: "centre", s: "We met in the centre of town." },
-        { w: "every", s: "I brush my teeth every day." },
-        { w: "special", s: "Today is a special day." },
-        { w: "beautiful", s: "The sunset is beautiful." },
-        { w: "different", s: "We picked two different books." },
-        { w: "sentence", s: "I can write a whole sentence." },
-        { w: "morning", s: "Good morning, sunshine!" },
-        { w: "another", s: "May I have another turn?" },
-        { w: "together", s: "We sang a song together." },
+        { w: "colour", s: "Blue is my favourite colour." },
+        { w: "neighbour", s: "Our neighbour waved hello." },
+        { w: "beautiful", s: "The sunset is so beautiful." },
+        { w: "different", s: "We chose two different books." },
         { w: "important", s: "Sleep is important for you." },
         { w: "remember", s: "I remember your birthday." },
-        { w: "surprise", s: "We made a surprise for Mom." },
-        { w: "favour", s: "Can you do me a favour?" }
+        { w: "together", s: "We sang a song together." },
+        { w: "another", s: "May I have another turn?" },
+        { w: "finally", s: "We finally finished the puzzle." },
+        { w: "animal", s: "A dog is my favourite animal." },
+        { w: "family", s: "My family loves board games." },
+        { w: "morning", s: "Good morning, sunshine!" },
+        { w: "suddenly", s: "Suddenly, it started to rain." }
       ]
     }
   ];
 
   /* ---- Eddie: tiny decodable words (tap the letters) ------------------- */
-  // Two tiers: words he already KNOWS, then simple CVC words to sound out.
   const eddieWords = [
-    // Words Eddie already knows — confidence first!
     { w: "no",   s: "No means stop and do not.", known: true },
     { w: "on",   s: "The light is on.", known: true },
     { w: "off",  s: "Turn the light off.", known: true },
-    { w: "stop", s: "Stop at the red light.", known: true },
+    { w: "stop", s: "We stop at the red light.", known: true },
     { w: "back", s: "Come back here, please.", known: true },
-    // CVC words to sound out: c-a-t
     { w: "cat", s: "The cat says meow." },
     { w: "dog", s: "The dog says woof." },
-    { w: "sun", s: "The sun is hot." },
-    { w: "hat", s: "I wear a hat." },
+    { w: "sun", s: "The sun is bright and hot." },
+    { w: "hat", s: "I wear a hat on my head." },
     { w: "pig", s: "The pig says oink." },
-    { w: "bed", s: "I sleep in bed." },
+    { w: "bed", s: "I sleep in my bed." },
     { w: "cup", s: "I drink from a cup." },
     { w: "pen", s: "I write with a pen." },
-    { w: "bus", s: "The bus is big." },
-    { w: "bug", s: "The bug is small." },
+    { w: "bus", s: "The bus is big and yellow." },
+    { w: "bug", s: "The bug is very small." },
     { w: "cap", s: "Put on your cap." },
     { w: "mat", s: "Wipe your feet on the mat." },
     { w: "hen", s: "The hen says cluck." },
@@ -252,9 +227,9 @@
     { w: "zip", s: "Zip up your coat." },
     { w: "rug", s: "The cat sat on the rug." },
     { w: "ten", s: "I have ten toes." },
-    { w: "six", s: "I am almost six." },
+    { w: "six", s: "I am almost six years old." },
     { w: "box", s: "The toy is in the box." },
-    { w: "jam", s: "I like jam." },
+    { w: "jam", s: "I like jam on my toast." },
     { w: "log", s: "A frog sat on a log." }
   ];
 
@@ -263,15 +238,15 @@
     eddie: { words: eddieWords }
   };
 
-  // Words that sound like another word. For these we ALWAYS play the sentence
-  // first, because the bare spoken word is ambiguous (e.g. "for" vs "four",
-  // "here" vs "hear", "no" vs "know"). Without context they can't be marked
-  // right or wrong fairly.
+  // Every word is now always read inside its sentence, so context is always
+  // present. This set is kept only so the "say it again" prompt can lean extra
+  // hard on the sentence for the most confusable look-alikes.
   SB.HOMOPHONES = new Set([
-    "no", "for", "here", "there", "your", "would", "see", "meet", "sun",
-    "be", "by", "road", "rain", "won", "two", "to", "blue", "hear", "where"
+    "no", "sun", "write", "plane", "flower", "which", "would",
+    "for", "four", "here", "hear", "there", "your", "see", "sea",
+    "to", "two", "too", "by", "buy", "road", "rode", "one", "won",
+    "blue", "know", "son", "right", "plain", "flour", "witch", "wood"
   ]);
 
-  // Flat helper: total Alice words
   SB.totalAliceWords = aliceBelts.reduce((n, b) => n + b.words.length, 0);
 })();

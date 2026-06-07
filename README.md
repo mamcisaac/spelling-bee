@@ -30,6 +30,16 @@ can use the on-screen keyboard or her real keyboard.
 
 ## How the learning works
 
+- **Real spelling-bee delivery.** Every word is always read inside a sentence:
+  *"Your word is, between. As in, sit between your two friends. Your word is,
+  between."* — spoken slowly and clearly (no more bare, mumbled words).
+- **🎤 Spell out loud.** It's a spelling bee — tap the mic and say the letters
+  ("b… e… t… w… e… e… n"). Browser speech recognition isn't perfect at single
+  letters, so the on-screen keyboard is always there as a fallback.
+- **Grade-2 words.** Alice's lists are authentic Grade-2 vocabulary by pattern
+  (short vowels, digraphs, blends, magic-e, vowel teams, r-controlled, oi/oy &
+  ou/ow, and tricky Canadian words like *favourite, colour, neighbour*). Every
+  topic is unlocked from the start.
 - **Type it from memory first.** Alice hears the word and types it. We do **not**
   give away the spelling on the first miss — only after a *second* miss does Buzzy
   reveal and spell it out so she can copy and succeed. First attempts are real recall.

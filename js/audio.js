@@ -26,27 +26,43 @@
 
   /* ---------------- Voice (speechSynthesis) ---------------------------- */
 
+  // macOS ships dozens of *novelty* voices (Albert, Bubbles, Zarvox, Trinoids,
+  // Whisper, Bad News, Jester…) that are unintelligible. Never pick these.
+  const BAD_VOICES = ["albert", "bad news", "bahh", "bells", "boing", "bubbles",
+    "cellos", "good news", "jester", "organ", "superstar", "trinoids", "whisper",
+    "wobble", "zarvox", "fred", "ralph", "kathy", "junior", "deranged",
+    "hysterical", "pipe organ", "grandma", "grandpa", "rocko", "shelley",
+    "sandy", "flo", "eddy", "reed", "rishi", "novelty"];
+  // High-quality voices worth preferring when installed.
+  const GREAT_VOICES = ["samantha", "ava", "allison", "susan", "zoe", "joelle",
+    "nicky", "tom", "evan", "nathan", "karen", "catherine", "matilda", "serena",
+    "stephanie", "moira", "tessa", "fiona", "daniel", "kate", "oliver", "google"];
+
   function pickBestVoice(list) {
     if (!list.length) return null;
     const score = (v) => {
+      const name = (v.name || "").toLowerCase();
+      if (BAD_VOICES.some((b) => name.includes(b))) return -1000; // never
       let s = 0;
       const lang = (v.lang || "").toLowerCase();
       if (lang.startsWith("en-ca")) s += 50;
-      else if (lang.startsWith("en-gb")) s += 40;
+      else if (lang.startsWith("en-gb")) s += 42;
+      else if (lang.startsWith("en-us")) s += 40;
       else if (lang.startsWith("en-au")) s += 30;
-      else if (lang.startsWith("en-us")) s += 35;
       else if (lang.startsWith("en")) s += 20;
-      const name = (v.name || "").toLowerCase();
-      // Prefer warm, natural, kid-friendly voices when present.
-      ["samantha", "karen", "moira", "tessa", "fiona", "google", "natural",
-       "zoe", "ava", "allison", "susan", "female"].forEach((k, i) => {
-        if (name.includes(k)) s += 12 - i * 0.3;
-      });
-      if (name.includes("compact") || name.includes("eloquence")) s -= 8;
-      if (v.localService) s += 3;
+      // Quality tiers — modern neural/enhanced voices sound far clearer.
+      if (name.includes("(enhanced)") || name.includes("enhanced")) s += 30;
+      if (name.includes("(premium)") || name.includes("premium")) s += 34;
+      if (name.includes("neural") || name.includes("natural")) s += 28;
+      if (name.includes("siri")) s += 26;
+      if (name.includes("google")) s += 22;
+      GREAT_VOICES.forEach((k, i) => { if (name.includes(k)) s += 16 - i * 0.2; });
+      if (name.includes("compact") || name.includes("eloquence")) s -= 14;
+      if (v.localService) s += 4;
       return s;
     };
-    return list.slice().sort((a, b) => score(b) - score(a))[0];
+    const sorted = list.slice().sort((a, b) => score(b) - score(a));
+    return score(sorted[0]) > -1000 ? sorted[0] : (list[0] || null);
   }
 
   function loadVoices() {
@@ -306,6 +322,105 @@
 
   function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
   Audio.wait = wait;
+
+  /* ---------------- Speech recognition (spelling out loud) ------------- */
+  // It's a spelling bee — kids can SAY the letters. Browser speech recognition
+  // is imperfect at single letters, so we parse generously and always keep the
+  // keyboard as a fallback.
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  Audio.canListen = !!SpeechRec;
+
+  // Map spoken letter-names (and their common homophones) to letters.
+  const LETTER_WORDS = {
+    "ay": "a", "eh": "a", "a": "a",
+    "bee": "b", "be": "b", "b": "b",
+    "see": "c", "sea": "c", "cee": "c", "c": "c",
+    "dee": "d", "d": "d",
+    "ee": "e", "e": "e",
+    "ef": "f", "eff": "f", "f": "f",
+    "gee": "g", "g": "g",
+    "aitch": "h", "haitch": "h", "h": "h",
+    "eye": "i", "i": "i",
+    "jay": "j", "j": "j",
+    "kay": "k", "k": "k",
+    "el": "l", "ell": "l", "l": "l",
+    "em": "m", "m": "m",
+    "en": "n", "n": "n",
+    "oh": "o", "o": "o",
+    "pee": "p", "pea": "p", "p": "p",
+    "cue": "q", "queue": "q", "kew": "q", "q": "q",
+    "ar": "r", "are": "r", "arr": "r", "r": "r",
+    "es": "s", "ess": "s", "s": "s",
+    "tee": "t", "tea": "t", "t": "t",
+    "you": "u", "yu": "u", "u": "u",
+    "vee": "v", "v": "v",
+    "doubleu": "w", "doubleyou": "w", "w": "w",
+    "ex": "x", "x": "x",
+    "why": "y", "y": "y",
+    "zee": "z", "zed": "z", "z": "z"
+  };
+
+  // Turn a spoken transcript ("see, ay, tee" or "c a t") into letters ("cat").
+  // Returns "" if it couldn't find clear letters (e.g. the child said the whole
+  // word). We deliberately do NOT expand a whole spoken word into its spelling.
+  Audio.spokenToLetters = function (transcript) {
+    if (!transcript) return "";
+    let t = (" " + transcript.toLowerCase() + " ")
+      .replace(/[.,!?;:'"-]/g, " ")
+      .replace(/\bdouble\s+/g, " double");      // "double u" -> "doubleu"
+    const tokens = t.split(/\s+/).filter(Boolean);
+    let out = "";
+    for (const tok of tokens) {
+      // Check letter-names first so "double-u"/"double-you" => W (not "uu").
+      if (LETTER_WORDS[tok]) { out += LETTER_WORDS[tok]; continue; }
+      const dm = tok.match(/^double(.+)$/);     // "double-l" -> two L's
+      if (dm) {
+        const base = LETTER_WORDS[dm[1]] || (dm[1].length === 1 ? dm[1] : "");
+        if (base) { out += base + base; continue; }
+      }
+      if (/^[a-z]$/.test(tok)) { out += tok; continue; }
+      // multi-letter real word that isn't a letter-name -> ignore
+    }
+    return out;
+  };
+
+  // Start listening. Calls back with the best letter-string we can parse.
+  // opts: { onpartial(letters,raw), onresult(letters,raw), onerror(code), onend() }
+  Audio.startListen = function (opts) {
+    opts = opts || {};
+    if (!Audio.canListen) { opts.onerror && opts.onerror("unsupported"); return null; }
+    Audio.cancelVoice();           // don't record our own narration
+    let rec;
+    try { rec = new SpeechRec(); } catch (e) { opts.onerror && opts.onerror("init"); return null; }
+    rec.lang = (Audio.voice && Audio.voice.lang) || "en-CA";
+    rec.interimResults = true;
+    rec.maxAlternatives = 4;
+    rec.continuous = false;
+    let finalRaw = "";
+    rec.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        // try every alternative, keep the one that yields the most letters
+        let best = r[0].transcript, bestLen = Audio.spokenToLetters(r[0].transcript).length;
+        for (let a = 1; a < r.length; a++) {
+          const len = Audio.spokenToLetters(r[a].transcript).length;
+          if (len > bestLen) { best = r[a].transcript; bestLen = len; }
+        }
+        if (r.isFinal) finalRaw += " " + best;
+        else interim += " " + best;
+      }
+      const raw = (finalRaw + " " + interim).trim();
+      opts.onpartial && opts.onpartial(Audio.spokenToLetters(raw), raw);
+    };
+    rec.onerror = (e) => { opts.onerror && opts.onerror(e.error || "error"); };
+    rec.onend = () => {
+      opts.onresult && opts.onresult(Audio.spokenToLetters(finalRaw), finalRaw.trim());
+      opts.onend && opts.onend();
+    };
+    try { rec.start(); } catch (e) { opts.onerror && opts.onerror("start"); return null; }
+    return rec;
+  };
 
   SB.audio = Audio;
 })();

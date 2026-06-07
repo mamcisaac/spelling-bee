@@ -192,6 +192,23 @@ body::before {
 .slot.hint-flash { background: #fff6cf; border-bottom-color: var(--bee-amber); animation: pop .3s; }
 @keyframes pop { 0%{transform:scale(1);} 50%{transform:scale(1.18);} 100%{transform:scale(1);} }
 
+/* microphone (spell out loud) */
+.mic-row { display: flex; justify-content: center; width: 100%; }
+.mic-btn {
+  background: linear-gradient(180deg, #ffd36e, var(--bee-amber)); color: #6a3500;
+  font-size: clamp(18px, 3vw, 24px); padding: 16px 28px; border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+.mic-btn .btn-ico { font-size: 1.5em; }
+.mic-btn.listening {
+  background: linear-gradient(180deg, #ff9a9a, var(--red)); color: #fff;
+  animation: micpulse 1s ease-in-out infinite;
+}
+@keyframes micpulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(255,90,90,.5), var(--shadow); }
+  50% { box-shadow: 0 0 0 14px rgba(255,90,90,0), var(--shadow); }
+}
+
 /* keyboard */
 .keyboard { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; max-width: 640px; }
 .kb-row { display: flex; gap: clamp(5px, 1.4vw, 9px); justify-content: center; width: 100%; }

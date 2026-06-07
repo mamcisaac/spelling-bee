@@ -81,16 +81,13 @@
   };
 
   // "Review my tricky words" — pulls Alice's most-missed / not-yet-mastered
-  // words from ACROSS every belt she has unlocked, so her weak spots come back
-  // even if she never thinks to replay the belt they came from.
+  // words from ACROSS every belt, so her weak spots come back even if she never
+  // thinks to replay the belt they came from.
   Game.startReview = function () {
     const p = S().player("alice");
-    const unlockedMax = S().BELT_ORDER.indexOf(p.belt) + 1;
     const pool = [];
     SB.WORDS.alice.belts.forEach((b) => {
-      if (S().BELT_ORDER.indexOf(b.id) <= unlockedMax) {
-        b.words.forEach((w) => pool.push(Object.assign({ _belt: b.id }, w)));
-      }
+      b.words.forEach((w) => pool.push(Object.assign({ _belt: b.id }, w)));
     });
     const struggled = pool.filter((s) => (p.struggle[s.w] || 0) > 0);
     let words, intro;
@@ -175,7 +172,6 @@
   function playWord(container, spec, mode, opts, onResult) {
     const word = spec.w.toLowerCase();
     const letters = word.split("");
-    const isHomophone = !!(SB.HOMOPHONES && SB.HOMOPHONES.has(word));
     let attempts = 0;
     let revealed = false;
 
@@ -186,15 +182,12 @@
 
     // --- controls (audio) ---
     const controls = el("div", "play-controls");
-    const hearBtn = UI().btn({ icon: "🔊", label: "Hear it", cls: "ctl",
-      speak: "Hear the word again", onClick: () => sayWord() });
-    const sentBtn = UI().btn({ icon: "💬", label: "Sentence", cls: "ctl",
-      speak: "Use it in a sentence", onClick: () => saySentence() });
+    const hearBtn = UI().btn({ icon: "🔊", label: "Say it again", cls: "ctl",
+      speak: "Say the word again", onClick: () => sayPrompt() });
     const hintBtn = UI().btn({ icon: "🍯", label: `Hint`, cls: "ctl ctl-hint",
       speak: "Get a hint", onClick: () => useHint() });
     updateHintLabel();
     controls.appendChild(hearBtn);
-    controls.appendChild(sentBtn);
     controls.appendChild(hintBtn);
     stageEl.appendChild(controls);
 
@@ -214,21 +207,25 @@
       hintBtn.classList.toggle("disabled", p.hints <= 0);
     }
 
-    function sayWord() {
+    // Always introduce the word INSIDE its sentence, spoken clearly and slowly,
+    // like a real spelling bee: "Your word is, when. As in, when will we go to
+    // the mall? Your word is, when."
+    const sentence = spec.s || `Here is the word: ${word}.`;
+    function sayPrompt() {
       A().cancelVoice();
-      // Homophones (for/four, here/hear, no/know...) are ambiguous on their
-      // own, so we always give the sentence for context.
-      if (isHomophone) { saySentence(); return; }
-      A().speak("Spell").then(() => A().speak(word, { interrupt: false, rate: 0.85 }))
+      return A().speak(`Your word is`, { rate: 0.82 })
+        .then(() => A().wait(80))
+        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.72 }))
+        .then(() => A().wait(220))
+        .then(() => A().speak("As in...", { interrupt: false, rate: 0.85 }))
         .then(() => A().wait(120))
-        .then(() => A().speak(word, { interrupt: false, rate: 0.8 }));
+        .then(() => A().speak(sentence, { interrupt: false, rate: 0.9 }))
+        .then(() => A().wait(260))
+        .then(() => A().speak(`Your word is`, { interrupt: false, rate: 0.82 }))
+        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.7 }));
     }
-    function saySentence() {
-      A().cancelVoice();
-      const s = spec.s || `Here is the word, ${word}.`;
-      A().speak(s).then(() => A().wait(150))
-        .then(() => A().speak("Now spell")).then(() => A().speak(word, { interrupt: false, rate: 0.85 }));
-    }
+    // Backwards-compatible alias used elsewhere.
+    function sayWord() { return sayPrompt(); }
     function useHint() {
       if (p.hints <= 0) {
         A().sfx("wrong"); A().speak("No more honey hints. Buy more in the shop!");
@@ -269,8 +266,19 @@
     /* ---------------- TYPE MODE (Alice) ---------------- */
     let typed = [];
     let keyboard, doneBtn, keyHandler;
+    let micBtn = null, rec = null, listening = false;
 
     function buildTypeMode() {
+      // Microphone row — spell out loud (it's a spelling bee!). Keyboard stays
+      // below as a fallback, since letter recognition isn't perfect.
+      if (A().canListen) {
+        const micRow = el("div", "mic-row");
+        micBtn = UI().btn({ icon: "🎤", label: "Spell out loud", cls: "mic-btn",
+          speak: "Tap, then spell the word out loud", onClick: toggleVoice });
+        micRow.appendChild(micBtn);
+        stageEl.appendChild(micRow);
+      }
+
       keyboard = el("div", "keyboard");
       const rows = ["abcdefg", "hijklmn", "opqrstu", "vwxyz"];
       rows.forEach((r) => {
@@ -324,6 +332,50 @@
       slot.textContent = ""; slot.classList.remove("filled");
       typed.pop();
       A().sfx("click");
+    }
+
+    // Render a whole letter string at once (used by voice input). Keeps the
+    // full string for checking, but only shows as many slots as the word has.
+    function setTyped(str) {
+      typed = str.split("");
+      slots.forEach((s, i) => {
+        if (i < str.length) { s.textContent = str[i].toUpperCase(); s.classList.add("filled"); }
+        else { s.textContent = ""; s.classList.remove("filled"); }
+      });
+    }
+
+    function setMicLabel(t) {
+      if (micBtn) { const l = micBtn.querySelector(".btn-label"); if (l) l.textContent = t; }
+    }
+    function toggleVoice() {
+      if (listening) { if (rec) { try { rec.stop(); } catch (e) {} } return; }
+      listening = true;
+      micBtn.classList.add("listening");
+      setMicLabel("Listening…");
+      showMascot("I'm listening! Say each letter out loud.");
+      rec = A().startListen({
+        onpartial: (lettersHeard) => { if (lettersHeard) setTyped(lettersHeard); },
+        onresult: (lettersHeard) => { if (lettersHeard) setTyped(lettersHeard); },
+        onerror: (code) => {
+          listening = false; micBtn.classList.remove("listening"); setMicLabel("Spell out loud");
+          if (code === "not-allowed" || code === "service-not-allowed") {
+            A().speak("I need permission to use the microphone. You can tap the letters instead.");
+          } else if (code === "no-speech") {
+            A().speak("I didn't hear anything. Tap the microphone and try again.");
+          }
+        },
+        onend: () => {
+          listening = false; micBtn.classList.remove("listening"); setMicLabel("Spell out loud");
+          const heard = typed.join("");
+          if (!heard) {
+            showMascot("Say each letter, like: see, ay, tee. Or tap the letters!");
+            A().speak("I didn't catch the letters. Try saying each letter, like, see, ay, tee. Or tap them.");
+            return;
+          }
+          setTimeout(submit, 450); // it's a spelling bee — check what she spelled
+        }
+      });
+      if (!rec) { listening = false; micBtn.classList.remove("listening"); setMicLabel("Spell out loud"); }
     }
 
     /* ---------------- TILES MODE (Eddie) ---------------- */
@@ -405,11 +457,10 @@
           showMascot("Here it is. Let's spell it together!");
           A().speak(msg).then(() => A().wait(220)).then(() => A().spellOut(word, { sayWord: true }));
         } else {
-          // 1st miss: encourage and just re-play the word (with context if it's
-          // a homophone) — no spelling given away yet.
+          // 1st miss: encourage and re-play the word in its sentence — no
+          // spelling given away yet.
           showMascot(msg + " Let's listen again.");
-          A().speak(msg).then(() => A().wait(220)).then(() =>
-            isHomophone ? saySentence() : A().speak(word, { rate: 0.78, interrupt: false }));
+          A().speak(msg).then(() => A().wait(220)).then(() => sayPrompt());
         }
         setTimeout(resetEntry, 700);
       }
@@ -432,6 +483,8 @@
 
     function cleanup() {
       if (keyHandler) { document.removeEventListener("keydown", keyHandler); keyHandler = null; }
+      if (rec) { try { rec.abort ? rec.abort() : rec.stop(); } catch (e) {} rec = null; }
+      listening = false;
       if (activeWordCleanup === cleanup) activeWordCleanup = null;
     }
 

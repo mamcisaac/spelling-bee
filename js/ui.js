@@ -258,7 +258,9 @@
 
     const list = el("div", "belt-list");
     SB.WORDS.alice.belts.forEach((belt, i) => {
-      const unlocked = S().BELT_ORDER.indexOf(belt.id) <= S().BELT_ORDER.indexOf(p.belt) + 1;
+      // All topics are open — Alice should be able to practise any Grade-2
+      // pattern right away. Belts are categories to pick, not gated levels.
+      const unlocked = true;
       const done = p.beltProgress[belt.id] ? Object.keys(p.beltProgress[belt.id]).length : 0;
       const total = belt.words.length;
       const card = el("button", "belt-card" + (unlocked ? "" : " locked"));
