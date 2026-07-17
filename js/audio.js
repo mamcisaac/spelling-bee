@@ -56,7 +56,9 @@
     if (name.includes("google")) s += 22;
     GREAT_VOICES.forEach((k, i) => { if (name.includes(k)) s += 16 - i * 0.2; });
     if (name.includes("compact") || name.includes("eloquence")) s -= 14;
-    if (v.localService) s += 4;
+    // Strongly prefer ON-DEVICE voices: remote ones (Chrome's "Google …")
+    // fail SILENTLY when their service hiccups — the game just goes mute.
+    if (v.localService) s += 20;
     return s;
   }
 
@@ -112,15 +114,27 @@
     if (!("speechSynthesis" in window)) return Promise.resolve();
     if (Audio.muted && !opts.force) return Promise.resolve();
     if (opts.interrupt !== false) { speakGen++; window.speechSynthesis.cancel(); }
+    const gen = speakGen;
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(String(text));
-      if (Audio.voice) u.voice = Audio.voice;
+      // Only pin our chosen voice if the engine STILL lists it — a stale or
+      // removed voice object makes some engines fail silently forever.
+      const vs = window.speechSynthesis.getVoices() || [];
+      const voiceOk = Audio.voice &&
+        vs.some((v) => v.name === Audio.voice.name && v.lang === Audio.voice.lang);
+      if (voiceOk) u.voice = Audio.voice;
       u.rate = opts.rate != null ? opts.rate : Audio.rate;
       u.pitch = opts.pitch != null ? opts.pitch : Audio.pitch;
       u.volume = opts.volume != null ? opts.volume : Audio.voiceVolume;
-      u.lang = (Audio.voice && Audio.voice.lang) || "en-CA";
-      let done = false;
-      const finish = () => { if (!done) { done = true; resolve(); } };
+      u.lang = (voiceOk && Audio.voice.lang) || "en-CA";
+      let done = false, started = false, watchdog = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        if (watchdog) clearTimeout(watchdog);
+        resolve();
+      };
+      u.onstart = () => { started = true; };
       u.onend = finish;
       u.onerror = finish;
       // Safety: never hang forever if the engine drops the event.
@@ -128,17 +142,33 @@
       setTimeout(finish, ms / Math.max(0.5, u.rate));
       // iOS Safari drops an utterance if speak() runs in the same tick as a
       // cancel(); a tiny gap after an interrupt makes it reliable.
-      const go = () => { try { window.speechSynthesis.speak(u); } catch (e) { finish(); } };
+      const go = () => {
+        try { window.speechSynthesis.speak(u); } catch (e) { finish(); return; }
+        // Watchdog: if the utterance never even STARTS (remote voice service
+        // down, stale voice, engine wedged), retry ONCE with the engine's own
+        // default voice — silence is the one failure kids can't recover from.
+        watchdog = setTimeout(() => {
+          if (started || done || gen !== speakGen || Audio.muted || document.hidden) return;
+          try { window.speechSynthesis.cancel(); } catch (e) {}
+          const u2 = new SpeechSynthesisUtterance(String(text));
+          u2.rate = u.rate; u2.pitch = u.pitch; u2.volume = u.volume; // no voice pin
+          u2.onend = finish; u2.onerror = finish;
+          try { window.speechSynthesis.speak(u2); } catch (e) { finish(); }
+        }, 1600);
+      };
       if (opts.interrupt !== false) setTimeout(go, 30); else go();
     });
   };
 
   // Chrome pauses speechSynthesis after ~15s of a long utterance/queue; this
-  // nudge keeps long letter-by-letter spellings from stalling.
+  // nudge keeps long letter-by-letter spellings from stalling. Also kick a
+  // PAUSED engine (Chrome can wedge in that state and then everything is
+  // silent until reload).
   if ("speechSynthesis" in window) {
     setInterval(() => {
       const ss = window.speechSynthesis;
-      if (ss && ss.speaking && !ss.paused) { try { ss.resume(); } catch (e) {} }
+      if (!ss) return;
+      if (ss.paused || (ss.speaking && !ss.paused)) { try { ss.resume(); } catch (e) {} }
     }, 6000);
   }
 
