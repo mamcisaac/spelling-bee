@@ -419,7 +419,13 @@
   // Turn a spoken transcript ("see, ay, tee" or "c a t") into letters ("cat").
   // Returns "" if it couldn't find clear letters (e.g. the child said the whole
   // word). We deliberately do NOT expand a whole spoken word into its spelling.
-  Audio.spokenToLetters = function (transcript) {
+  //
+  // `expect` (optional): the REMAINING letters of the answer. Recognizers love
+  // to fuse spoken letter-names into a word ("el ay em" -> "lamb"); when that
+  // fused word lines up with the letters we're expecting next ("lamb" vs
+  // "lamp" -> "lam"), credit the overlap. Saying the whole answer word does
+  // NOT count — she has to spell it, not say it.
+  Audio.spokenToLetters = function (transcript, expect) {
     if (!transcript) return "";
     let t = (" " + transcript.toLowerCase() + " ")
       .replace(/[.,!?;:'"-]/g, " ")
@@ -435,13 +441,22 @@
         if (base) { out += base + base; continue; }
       }
       if (/^[a-z]$/.test(tok)) { out += tok; continue; }
+      // Fused-letters recovery: a non-letter word that (almost) entirely
+      // matches the next expected letters is a garbled spelling, not a word.
+      if (expect && tok !== expect) {
+        const rem = expect.slice(out.length);
+        let cp = 0;
+        while (cp < tok.length && cp < rem.length && tok[cp] === rem[cp]) cp++;
+        if (cp >= 2 && cp >= tok.length - 1) { out += tok.slice(0, cp); continue; }
+      }
       // multi-letter real word that isn't a letter-name -> ignore
     }
     return out;
   };
 
   // Start listening. Calls back with the best letter-string we can parse.
-  // opts: { onpartial(letters,raw), onresult(letters,raw), onerror(code), onend() }
+  // opts: { expect (remaining answer letters, for fused-word recovery),
+  //         onpartial(letters,raw), onresult(letters,raw), onerror(code), onend() }
   Audio.startListen = function (opts) {
     opts = opts || {};
     if (!Audio.canListen) { opts.onerror && opts.onerror("unsupported"); return null; }
@@ -455,35 +470,38 @@
     // alive between letters instead of ending at the first silence. (Sessions
     // can still end on their own — game.js restarts them while listening.)
     rec.continuous = true;
-    let finalRaw = "", lastRaw = "";
+    // Session letters are MONOTONIC: Safari freely rewrites its whole result
+    // list mid-session (often fusing letter-names into a word that parses to
+    // fewer letters). A rewrite may replace what we show, but never shrink it —
+    // shrinking is how letters the child already saw used to vanish and get
+    // overwritten by the next thing she said.
+    const expect = opts.expect || "";
+    let shown = "", shownRaw = "";
     rec.onresult = (e) => {
       // Rebuild from the FULL result list every event (not resultIndex):
       // Safari re-reports earlier results, and appending would duplicate them.
-      let fin = "", interim = "";
+      let acc = "", raw = "";
       for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i];
+        const rem = expect.slice(acc.length);
         // try every alternative, keep the one that yields the most letters
-        let best = r[0].transcript, bestLen = Audio.spokenToLetters(r[0].transcript).length;
+        let best = r[0].transcript, bestLen = Audio.spokenToLetters(r[0].transcript, rem).length;
         for (let a = 1; a < r.length; a++) {
-          const len = Audio.spokenToLetters(r[a].transcript).length;
+          const len = Audio.spokenToLetters(r[a].transcript, rem).length;
           if (len > bestLen) { best = r[a].transcript; bestLen = len; }
         }
-        if (r.isFinal) fin += " " + best;
-        else interim += " " + best;
+        acc += Audio.spokenToLetters(best, rem);
+        raw += " " + best;
       }
-      finalRaw = fin;
-      lastRaw = (fin + " " + interim).trim();
-      opts.onpartial && opts.onpartial(Audio.spokenToLetters(lastRaw), lastRaw);
+      if (acc.length >= shown.length) { shown = acc; shownRaw = raw.trim(); }
+      opts.onpartial && opts.onpartial(shown, shownRaw);
     };
     rec.onerror = (e) => { opts.onerror && opts.onerror(e.error || "error"); };
     rec.onend = () => {
-      // Safari often ends a session without ever marking a result final. If
-      // the last partial parsed to MORE letters than the finals did, trust it —
-      // otherwise letters the child saw appear would vanish from the fold-in,
-      // and the next session would overwrite them.
-      let raw = finalRaw.trim();
-      if (Audio.spokenToLetters(lastRaw).length > Audio.spokenToLetters(raw).length) raw = lastRaw;
-      opts.onresult && opts.onresult(Audio.spokenToLetters(raw), raw);
+      // Report exactly what the partials showed — the fold-in must match the
+      // screen, or the next session starts from a different string than the
+      // child is looking at.
+      opts.onresult && opts.onresult(shown, shownRaw);
       opts.onend && opts.onend();
     };
     try { rec.start(); } catch (e) { opts.onerror && opts.onerror("start"); return null; }

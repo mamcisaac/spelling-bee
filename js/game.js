@@ -391,6 +391,10 @@
     function startVoiceSession() {
       let sessionNew = 0;          // letters THIS session added (runaway guard)
       rec = A().startListen({
+        // Letters still needed: lets the recognizer credit fused letter-names
+        // ("el ay em" heard as "lamb") against the answer without ever
+        // accepting the whole word said out loud.
+        expect: letters.join("").toLowerCase().slice(voiceBase.length),
         onpartial: (heard) => {
           if (!listening || !heard) return;
           voiceRender(voiceBase + heard);
