@@ -211,18 +211,20 @@
     // like a real spelling bee: "Your word is, when. As in, when will we go to
     // the mall? Your word is, when."
     const sentence = spec.s || `Here is the word: ${word}.`;
+    // Rates floored at 0.85: slower than that sounds drawn-out and creepy to
+    // kids. 0.85 is still deliberate enough for the target word.
     function sayPrompt() {
       A().cancelVoice();
-      return A().speak(`Your word is`, { rate: 0.82 })
+      return A().speak(`Your word is`, { rate: 0.85 })
         .then(() => A().wait(80))
-        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.72 }))
+        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.85 }))
         .then(() => A().wait(220))
         .then(() => A().speak("As in...", { interrupt: false, rate: 0.85 }))
         .then(() => A().wait(120))
         .then(() => A().speak(sentence, { interrupt: false, rate: 0.9 }))
         .then(() => A().wait(260))
-        .then(() => A().speak(`Your word is`, { interrupt: false, rate: 0.82 }))
-        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.7 }));
+        .then(() => A().speak(`Your word is`, { interrupt: false, rate: 0.85 }))
+        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.85 }));
     }
     // Backwards-compatible alias used elsewhere.
     function sayWord() { return sayPrompt(); }
@@ -236,7 +238,7 @@
       // Reveal the first not-yet-correct letter + spell slowly.
       flashFirstLetter();
       A().speak("The word starts with").then(() =>
-        A().speak(letterSpoken(letters[0]), { interrupt: false, rate: 0.8 })).then(() =>
+        A().speak(letterSpoken(letters[0]), { interrupt: false, rate: 0.85 })).then(() =>
         A().wait(150)).then(() => A().spellOut(word, { sayWord: true }));
     }
     function flashFirstLetter() {
@@ -250,10 +252,9 @@
       }, 1400);
     }
 
-    function letterSpoken(ch) {
-      const m = { a: "ay", e: "ee", i: "eye", o: "oh", u: "you" };
-      return m[ch.toLowerCase()] || ch.toUpperCase();
-    }
+    // Single source of truth for spoken letters lives in audio.js (lowercase
+    // so TTS never says "Capital M"; z → "zed").
+    function letterSpoken(ch) { return A().letterName(ch); }
 
     function currentIndex() {
       if (mode === "type") return typed.length;
@@ -266,7 +267,13 @@
     /* ---------------- TYPE MODE (Alice) ---------------- */
     let typed = [];
     let keyboard, doneBtn, keyHandler;
-    let micBtn = null, rec = null, listening = false;
+    let micBtn = null, rec = null, listening = false, torndown = false;
+    // Voice-input state: letters locked in so far (recognition sessions come
+    // and go — each new session APPENDS to this base instead of replacing).
+    let voiceBase = "";
+    let emptySessions = 0;      // consecutive sessions that heard no letters
+    let voiceGuided = false;    // "say each letter" tip given (only say it once)
+    let voiceSubmitTimer = null;
 
     function buildTypeMode() {
       // Microphone row — spell out loud (it's a spelling bee!). Keyboard stays
@@ -320,7 +327,7 @@
       slot.textContent = ch.toUpperCase();
       slot.classList.add("filled");
       A().sfx("tile");
-      if (S().get().settings.letterEcho) A().speak(letterSpoken(ch), { rate: 1, pitch: 1.15 });
+      if (S().get().settings.letterEcho) A().speak(letterSpoken(ch), { rate: 1, pitch: 1.05 });
       FX().pulse(slot);
       // No auto-submit: when the word is full, nudge the Done button so she
       // gets a moment to check her work before committing.
@@ -334,9 +341,11 @@
       A().sfx("click");
     }
 
-    // Render a whole letter string at once (used by voice input). Keeps the
-    // full string for checking, but only shows as many slots as the word has.
+    // Render a whole letter string at once (used by voice input). Clamped to
+    // the word length so extra heard letters can't overflow the slots or make
+    // the word impossible to submit.
     function setTyped(str) {
+      str = str.slice(0, letters.length);
       typed = str.split("");
       slots.forEach((s, i) => {
         if (i < str.length) { s.textContent = str[i].toUpperCase(); s.classList.add("filled"); }
@@ -347,35 +356,91 @@
     function setMicLabel(t) {
       if (micBtn) { const l = micBtn.querySelector(".btn-label"); if (l) l.textContent = t; }
     }
-    function toggleVoice() {
-      if (listening) { if (rec) { try { rec.stop(); } catch (e) {} } return; }
-      listening = true;
-      micBtn.classList.add("listening");
-      setMicLabel("Listening…");
-      showMascot("I'm listening! Say each letter out loud.");
+    function micIdle() {
+      listening = false;
+      if (micBtn) { micBtn.classList.remove("listening"); setMicLabel("Spell out loud"); }
+    }
+
+    // Show voiceBase + this session's letters (clamped). When the word fills,
+    // stop the mic and submit after a short beat so she sees the full word.
+    function voiceRender(merged) {
+      if (torndown) return;        // late abort()-fired results must not submit
+      setTyped(merged);
+      if (typed.length >= letters.length && !voiceSubmitTimer) {
+        micIdle();                 // listening=false first: onend must not restart
+        if (rec) { try { rec.stop(); } catch (e) {} }
+        voiceSubmitTimer = setTimeout(() => { voiceSubmitTimer = null; submit(); }, 450);
+      }
+    }
+
+    // One recognition session. Even with continuous=true, sessions end on
+    // their own (silence timeouts, engine quirks) — while `listening` is
+    // still true we restart silently so pauses between letters just work.
+    function startVoiceSession() {
+      let sessionNew = 0;          // letters THIS session added (runaway guard)
       rec = A().startListen({
-        onpartial: (lettersHeard) => { if (lettersHeard) setTyped(lettersHeard); },
-        onresult: (lettersHeard) => { if (lettersHeard) setTyped(lettersHeard); },
+        onpartial: (heard) => {
+          if (!listening || !heard) return;
+          voiceRender(voiceBase + heard);
+        },
+        onresult: (heard) => {
+          // Session's final letters: fold into the base so the NEXT session's
+          // partials append instead of replacing what she already said.
+          const merged = (voiceBase + heard).slice(0, letters.length);
+          sessionNew = merged.length - voiceBase.length;
+          voiceBase = merged;
+          if (heard) voiceRender(merged);
+        },
         onerror: (code) => {
-          listening = false; micBtn.classList.remove("listening"); setMicLabel("Spell out loud");
+          // Fatal only — "no-speech" is normal between letters and is handled
+          // by the zero-new-letters counter in onend.
           if (code === "not-allowed" || code === "service-not-allowed") {
+            micIdle();
             A().speak("I need permission to use the microphone. You can tap the letters instead.");
-          } else if (code === "no-speech") {
-            A().speak("I didn't hear anything. Tap the microphone and try again.");
+          } else if (code === "audio-capture") {
+            micIdle();
+            A().speak("I can't hear the microphone. You can tap the letters instead.");
+          } else if (code === "unsupported" || code === "init" || code === "start") {
+            micIdle();
           }
         },
         onend: () => {
-          listening = false; micBtn.classList.remove("listening"); setMicLabel("Spell out loud");
-          const heard = typed.join("");
-          if (!heard) {
-            showMascot("Say each letter, like: see, ay, tee. Or tap the letters!");
-            A().speak("I didn't catch the letters. Try saying each letter, like, see, ay, tee. Or tap them.");
+          rec = null;
+          if (!listening) return;  // stopped on purpose (tap / word full / fatal)
+          if (sessionNew > 0) emptySessions = 0; else emptySessions++;
+          if (emptySessions >= 2) {
+            // Two silent sessions in a row — she's probably stuck; stop and
+            // coach ONCE rather than looping the mic forever.
+            micIdle();
+            if (!voiceGuided) {
+              voiceGuided = true;
+              showMascot("Say each letter, like: see, ay, tee. Or tap the letters!");
+              A().speak("I didn't catch the letters. Try saying each letter, like, see, ay, tee. Or tap them.");
+            }
             return;
           }
-          setTimeout(submit, 450); // it's a spelling bee — check what she spelled
+          // Silent restart — keep "Listening…" up, no re-announcement.
+          setTimeout(() => { if (listening && !rec) startVoiceSession(); }, 300);
         }
       });
-      if (!rec) { listening = false; micBtn.classList.remove("listening"); setMicLabel("Spell out loud"); }
+      if (!rec) micIdle();
+    }
+
+    function toggleVoice() {
+      if (listening) {
+        // Stop for real: flip the flag BEFORE stop() so onend can't restart.
+        // Keep whatever letters were captured; no auto-submit of a part-word.
+        micIdle();
+        if (rec) { try { rec.stop(); } catch (e) {} }
+        return;
+      }
+      listening = true;
+      voiceBase = typed.join("");  // append to letters already entered
+      emptySessions = 0;
+      micBtn.classList.add("listening");
+      setMicLabel("Listening…");
+      showMascot("I'm listening! Say each letter out loud.");
+      startVoiceSession();
     }
 
     /* ---------------- TILES MODE (Eddie) ---------------- */
@@ -410,7 +475,7 @@
       slot.classList.add("filled");
       tile.classList.add("used"); tile.disabled = true;
       A().sfx("tile");
-      A().speak(letterSpoken(tile.dataset.ch), { rate: 0.95, pitch: 1.15 });
+      A().speak(letterSpoken(tile.dataset.ch), { rate: 0.95, pitch: 1.05 });
       FX().pulse(slot);
       if (placed.every((x) => x)) setTimeout(submit, 350);
     }
@@ -483,8 +548,10 @@
 
     function cleanup() {
       if (keyHandler) { document.removeEventListener("keydown", keyHandler); keyHandler = null; }
+      torndown = true;             // late abort()-fired results must not render/submit
+      listening = false;           // before abort so onend can never restart
+      if (voiceSubmitTimer) { clearTimeout(voiceSubmitTimer); voiceSubmitTimer = null; }
       if (rec) { try { rec.abort ? rec.abort() : rec.stop(); } catch (e) {} rec = null; }
-      listening = false;
       if (activeWordCleanup === cleanup) activeWordCleanup = null;
     }
 

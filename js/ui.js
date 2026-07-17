@@ -445,22 +445,46 @@
     echoRow.appendChild(echoBtn);
     card.appendChild(echoRow);
 
-    // Voice picker
-    if (A().voices && A().voices.length) {
+    // Voice picker — curated, not the raw OS voice list. On macOS/iOS
+    // `A().voices` can be a huge unsorted pile including novelty voices that
+    // are a bad surprise for a grown-up to land a kid on. Prefer
+    // `A().rankedVoices()` (filtered + best-first) when the audio module
+    // provides one; always fall back to the raw list since we can't assume
+    // it exists.
+    const allVoices = (A().rankedVoices ? A().rankedVoices() : A().voices) || [];
+    if (allVoices.length) {
       const vrow = el("div", "set-row");
       vrow.innerHTML = `<label>Voice 🎙️</label>`;
       const sel = el("select", "voice-select");
-      A().voices.forEach((v) => {
+
+      const TOP_N = 12;
+      const shortlist = allVoices.slice(0, TOP_N);
+      // Never let a saved preference disappear from the list just because
+      // it didn't make the top N.
+      const current = A().voice;
+      if (current && !shortlist.some((v) => v.name === current.name)) {
+        const found = allVoices.find((v) => v.name === current.name);
+        if (found) shortlist.push(found);
+      }
+
+      shortlist.forEach((v, i) => {
         const o = el("option"); o.value = v.name;
-        o.textContent = `${v.name} (${v.lang})`;
+        o.textContent = (i === 0 ? "⭐ " : "") + `${v.name} (${v.lang})`;
         if (A().voice && A().voice.name === v.name) o.selected = true;
         sel.appendChild(o);
       });
       sel.addEventListener("change", () => {
-        const v = A().voices.find((x) => x.name === sel.value);
+        const v = allVoices.find((x) => x.name === sel.value);
         if (v) { A().voice = v; st.voiceName = v.name; S().save(); A().speak("Hi! I sound like this now."); }
       });
       vrow.appendChild(sel);
+
+      // Let a grown-up audition the current voice without changing anything.
+      const tryBtn = btn({ label: "Try voice", cls: "ctl",
+        speak: "Try this voice",
+        onClick: () => A().speak("Hi! Let's spell some words together!") });
+      vrow.appendChild(tryBtn);
+
       card.appendChild(vrow);
     }
 

@@ -210,15 +210,30 @@ body::before {
 }
 
 /* keyboard */
-.keyboard { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; max-width: 640px; }
-.kb-row { display: flex; gap: clamp(5px, 1.4vw, 9px); justify-content: center; width: 100%; }
+/* --kb-gap drives the .kb-row gap AND the letter-key width formula below, so
+   the two can never drift apart and cause overflow/mis-sizing. */
+.keyboard { --kb-gap: clamp(5px, 1.4vw, 9px); display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; max-width: 640px; }
+.kb-row { display: flex; gap: var(--kb-gap); justify-content: center; width: 100%; }
 .key {
   font-family: var(--font); font-weight: 900; cursor: pointer; border: none;
   background: #fff; color: var(--ink); border-radius: 14px;
-  flex: 1; max-width: 70px; aspect-ratio: 1 / 1; min-height: 44px;
+  aspect-ratio: 1 / 1; min-height: 44px;
   font-size: clamp(18px, 4.5vw, 28px); box-shadow: var(--shadow-sm);
   display: flex; align-items: center; justify-content: center;
   transition: transform .06s;
+}
+/* Every letter key is sized on a fixed 7-column basis (the longest row —
+   abcdefg/hijklmn/opqrstu — has 7 keys) regardless of how many keys its own
+   row holds. This keeps the 5-key vwxyz row's letters the same size as every
+   other row instead of stretching to fill the row (that stretching was the
+   bug: 5 keys sharing full row width rendered visibly larger than the other
+   26 letters). The row stays centered via .kb-row's existing justify-content.
+   Scoped to :not(.key-wide) so the back/enter action keys keep their own
+   wide proportions below. */
+.key:not(.key-wide) {
+  flex: 0 1 auto;
+  width: calc((100% - 6 * var(--kb-gap)) / 7);
+  max-width: 70px;
 }
 .key:active { transform: translateY(3px); }
 .kb-actions { gap: 12px; margin-top: 2px; }

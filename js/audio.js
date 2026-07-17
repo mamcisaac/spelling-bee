@@ -15,7 +15,7 @@
     voices: [],
     voice: null,
     rate: 0.95,
-    pitch: 1.05,
+    pitch: 1.0,
     voiceVolume: 1,
     sfxVolume: 0.6,
     muted: false,
@@ -38,32 +38,44 @@
     "nicky", "tom", "evan", "nathan", "karen", "catherine", "matilda", "serena",
     "stephanie", "moira", "tessa", "fiona", "daniel", "kate", "oliver", "google"];
 
+  function voiceScore(v) {
+    const name = (v.name || "").toLowerCase();
+    if (BAD_VOICES.some((b) => name.includes(b))) return -1000; // never
+    let s = 0;
+    const lang = (v.lang || "").toLowerCase();
+    if (lang.startsWith("en-ca")) s += 50;
+    else if (lang.startsWith("en-gb")) s += 42;
+    else if (lang.startsWith("en-us")) s += 40;
+    else if (lang.startsWith("en-au")) s += 30;
+    else if (lang.startsWith("en")) s += 20;
+    // Quality tiers — modern neural/enhanced voices sound far clearer.
+    if (name.includes("(enhanced)") || name.includes("enhanced")) s += 30;
+    if (name.includes("(premium)") || name.includes("premium")) s += 34;
+    if (name.includes("neural") || name.includes("natural")) s += 28;
+    if (name.includes("siri")) s += 26;
+    if (name.includes("google")) s += 22;
+    GREAT_VOICES.forEach((k, i) => { if (name.includes(k)) s += 16 - i * 0.2; });
+    if (name.includes("compact") || name.includes("eloquence")) s -= 14;
+    if (v.localService) s += 4;
+    return s;
+  }
+
   function pickBestVoice(list) {
     if (!list.length) return null;
-    const score = (v) => {
-      const name = (v.name || "").toLowerCase();
-      if (BAD_VOICES.some((b) => name.includes(b))) return -1000; // never
-      let s = 0;
-      const lang = (v.lang || "").toLowerCase();
-      if (lang.startsWith("en-ca")) s += 50;
-      else if (lang.startsWith("en-gb")) s += 42;
-      else if (lang.startsWith("en-us")) s += 40;
-      else if (lang.startsWith("en-au")) s += 30;
-      else if (lang.startsWith("en")) s += 20;
-      // Quality tiers — modern neural/enhanced voices sound far clearer.
-      if (name.includes("(enhanced)") || name.includes("enhanced")) s += 30;
-      if (name.includes("(premium)") || name.includes("premium")) s += 34;
-      if (name.includes("neural") || name.includes("natural")) s += 28;
-      if (name.includes("siri")) s += 26;
-      if (name.includes("google")) s += 22;
-      GREAT_VOICES.forEach((k, i) => { if (name.includes(k)) s += 16 - i * 0.2; });
-      if (name.includes("compact") || name.includes("eloquence")) s -= 14;
-      if (v.localService) s += 4;
-      return s;
-    };
-    const sorted = list.slice().sort((a, b) => score(b) - score(a));
-    return score(sorted[0]) > -1000 ? sorted[0] : (list[0] || null);
+    const sorted = list.slice().sort((a, b) => voiceScore(b) - voiceScore(a));
+    // Prefer the best NON-novelty voice; only ever fall back to a BAD_VOICES
+    // match when literally every installed voice is one.
+    const good = sorted.find((v) => voiceScore(v) > -1000);
+    return good || sorted[0] || null;
   }
+
+  // Voices for the settings UI: best-first, novelty voices filtered out —
+  // unless they're all we have. Cheap, so it's computed fresh on each call.
+  Audio.rankedVoices = function () {
+    const sorted = Audio.voices.slice().sort((a, b) => voiceScore(b) - voiceScore(a));
+    const good = sorted.filter((v) => voiceScore(v) > -1000);
+    return good.length ? good : sorted;
+  };
 
   function loadVoices() {
     if (!("speechSynthesis" in window)) return;
@@ -128,11 +140,11 @@
   // Used for hints and for showing the correct answer gently.
   Audio.spellOut = function (word, opts) {
     opts = opts || {};
-    const letters = word.toUpperCase().split("");
+    const letters = word.toLowerCase().split("");
     let p = Promise.resolve();
     letters.forEach((ch) => {
-      p = p.then(() => Audio.speak(letterName(ch), {
-        rate: opts.rate || 0.8, pitch: 1.1, interrupt: false
+      p = p.then(() => Audio.speak(Audio.letterName(ch), {
+        rate: opts.rate || 0.85, pitch: 1.05, interrupt: false
       })).then(() => wait(120));
     });
     if (opts.sayWord !== false) {
@@ -142,11 +154,14 @@
     return p;
   };
 
-  function letterName(ch) {
-    // Make single letters read clearly (avoid "a" → long pause weirdness).
-    const map = { A: "ay", E: "ee", I: "eye", O: "oh", U: "you" };
-    return map[ch] || ch;
-  }
+  // Single source of truth for how a letter is SPOKEN. Lowercase on purpose:
+  // TTS voices read a lone uppercase letter as "Capital M", and phonetic hints
+  // like "ay" get mispronounced ("ay" → sounds like "I"). A lone lowercase
+  // letter is read as its letter name. Z is "zed" — Canadian English.
+  Audio.letterName = function (ch) {
+    const c = String(ch).toLowerCase();
+    return c === "z" ? "zed" : c;
+  };
 
   Audio.cancelVoice = function () {
     if ("speechSynthesis" in window) {
@@ -395,7 +410,10 @@
     rec.lang = (Audio.voice && Audio.voice.lang) || "en-CA";
     rec.interimResults = true;
     rec.maxAlternatives = 4;
-    rec.continuous = false;
+    // Kids say letters one at a time with pauses; continuous keeps the session
+    // alive between letters instead of ending at the first silence. (Sessions
+    // can still end on their own — game.js restarts them while listening.)
+    rec.continuous = true;
     let finalRaw = "";
     rec.onresult = (e) => {
       let interim = "";
