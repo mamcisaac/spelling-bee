@@ -455,10 +455,12 @@
     // alive between letters instead of ending at the first silence. (Sessions
     // can still end on their own — game.js restarts them while listening.)
     rec.continuous = true;
-    let finalRaw = "";
+    let finalRaw = "", lastRaw = "";
     rec.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      // Rebuild from the FULL result list every event (not resultIndex):
+      // Safari re-reports earlier results, and appending would duplicate them.
+      let fin = "", interim = "";
+      for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i];
         // try every alternative, keep the one that yields the most letters
         let best = r[0].transcript, bestLen = Audio.spokenToLetters(r[0].transcript).length;
@@ -466,15 +468,22 @@
           const len = Audio.spokenToLetters(r[a].transcript).length;
           if (len > bestLen) { best = r[a].transcript; bestLen = len; }
         }
-        if (r.isFinal) finalRaw += " " + best;
+        if (r.isFinal) fin += " " + best;
         else interim += " " + best;
       }
-      const raw = (finalRaw + " " + interim).trim();
-      opts.onpartial && opts.onpartial(Audio.spokenToLetters(raw), raw);
+      finalRaw = fin;
+      lastRaw = (fin + " " + interim).trim();
+      opts.onpartial && opts.onpartial(Audio.spokenToLetters(lastRaw), lastRaw);
     };
     rec.onerror = (e) => { opts.onerror && opts.onerror(e.error || "error"); };
     rec.onend = () => {
-      opts.onresult && opts.onresult(Audio.spokenToLetters(finalRaw), finalRaw.trim());
+      // Safari often ends a session without ever marking a result final. If
+      // the last partial parsed to MORE letters than the finals did, trust it —
+      // otherwise letters the child saw appear would vanish from the fold-in,
+      // and the next session would overwrite them.
+      let raw = finalRaw.trim();
+      if (Audio.spokenToLetters(lastRaw).length > Audio.spokenToLetters(raw).length) raw = lastRaw;
+      opts.onresult && opts.onresult(Audio.spokenToLetters(raw), raw);
       opts.onend && opts.onend();
     };
     try { rec.start(); } catch (e) { opts.onerror && opts.onerror("start"); return null; }
