@@ -100,12 +100,18 @@
     setTimeout(loadVoices, 1200);
   }
 
+  // Generation counter for chained speech (spellOut, prompts). Any interrupt
+  // bumps it, which makes still-pending steps of an OLD chain no-ops — that's
+  // what stops two prompts from talking over each other.
+  let speakGen = 0;
+  Audio.speakGen = function () { return speakGen; };
+
   // Speak text. Returns a Promise that resolves when finished (or skipped).
   Audio.speak = function (text, opts) {
     opts = opts || {};
     if (!("speechSynthesis" in window)) return Promise.resolve();
     if (Audio.muted && !opts.force) return Promise.resolve();
-    if (opts.interrupt !== false) window.speechSynthesis.cancel();
+    if (opts.interrupt !== false) { speakGen++; window.speechSynthesis.cancel(); }
     return new Promise((resolve) => {
       const u = new SpeechSynthesisUtterance(String(text));
       if (Audio.voice) u.voice = Audio.voice;
@@ -141,15 +147,19 @@
   Audio.spellOut = function (word, opts) {
     opts = opts || {};
     const letters = word.toLowerCase().split("");
+    // Capture the generation: if anything interrupts (a new prompt, screen
+    // nav), the remaining letters silently stop instead of talking over it.
+    const gen = speakGen;
+    const live = () => gen === speakGen;
     let p = Promise.resolve();
     letters.forEach((ch) => {
-      p = p.then(() => Audio.speak(Audio.letterName(ch), {
+      p = p.then(() => live() ? Audio.speak(Audio.letterName(ch), {
         rate: opts.rate || 0.85, pitch: 1.05, interrupt: false
-      })).then(() => wait(120));
+      }) : null).then(() => live() ? wait(120) : null);
     });
     if (opts.sayWord !== false) {
-      p = p.then(() => wait(150))
-           .then(() => Audio.speak(word, { rate: 0.9, interrupt: false }));
+      p = p.then(() => live() ? wait(150) : null)
+           .then(() => live() ? Audio.speak(word, { rate: 0.9, interrupt: false }) : null);
     }
     return p;
   };
@@ -164,6 +174,7 @@
   };
 
   Audio.cancelVoice = function () {
+    speakGen++; // kill any pending chained speech (spellOut / prompt steps)
     if ("speechSynthesis" in window) {
       try { window.speechSynthesis.cancel(); } catch (e) {}
     }

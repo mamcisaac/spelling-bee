@@ -54,6 +54,10 @@
   let activeWordCleanup = null;
   Game._teardownWord = function () { if (activeWordCleanup) activeWordCleanup(); };
 
+  // Mic permission was denied — remember for the whole visit so auto-listen
+  // doesn't re-trigger the browser permission dance on every single word.
+  let voiceDenied = false;
+
   /* ===================================================================
      ROUND SETUP (solo)
      =================================================================== */
@@ -207,39 +211,44 @@
       hintBtn.classList.toggle("disabled", p.hints <= 0);
     }
 
-    // Always introduce the word INSIDE its sentence, spoken clearly and slowly,
-    // like a real spelling bee: "Your word is, when. As in, when will we go to
-    // the mall? Your word is, when."
-    const sentence = spec.s || `Here is the word: ${word}.`;
-    // Rates floored at 0.85: slower than that sounds drawn-out and creepy to
-    // kids. 0.85 is still deliberate enough for the target word.
+    // The voice says as little as possible — ONLY the word and its sentence
+    // (the sentence stays because the voice is hard to understand without
+    // context). No filler, no instructions.
+    const sentence = spec.s || `${word}.`;
+    // promptSeq: each new prompt/hint/reveal invalidates older in-flight
+    // speech chains so two prompts can never talk over each other, and only
+    // the LIVE chain is allowed to reopen the mic afterwards.
+    let promptSeq = 0;
     function sayPrompt() {
+      stopVoiceInput();            // never speak while the mic is open — the
+                                   // recognizer would transcribe our own TTS
       A().cancelVoice();
-      return A().speak(`Your word is`, { rate: 0.85 })
-        .then(() => A().wait(80))
-        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.85 }))
-        .then(() => A().wait(220))
-        .then(() => A().speak("As in...", { interrupt: false, rate: 0.85 }))
-        .then(() => A().wait(120))
-        .then(() => A().speak(sentence, { interrupt: false, rate: 0.9 }))
-        .then(() => A().wait(260))
-        .then(() => A().speak(`Your word is`, { interrupt: false, rate: 0.85 }))
-        .then(() => A().speak(word + ".", { interrupt: false, rate: 0.85 }));
+      const seq = ++promptSeq;
+      const live = () => seq === promptSeq && !torndown;
+      return A().speak(`Spell, ${word}.`, { rate: 0.85 })
+        .then(() => live() ? A().wait(200) : null)
+        .then(() => live() ? A().speak(`As in... ${sentence}`, { interrupt: false, rate: 0.9 }) : null)
+        .then(() => live() ? A().wait(200) : null)
+        .then(() => live() ? A().speak(word + ".", { interrupt: false, rate: 0.85 }) : null)
+        .then(() => { if (live()) autoListen(); });
     }
     // Backwards-compatible alias used elsewhere.
     function sayWord() { return sayPrompt(); }
     function useHint() {
       if (p.hints <= 0) {
-        A().sfx("wrong"); A().speak("No more honey hints. Buy more in the shop!");
+        A().sfx("wrong");
         FX().shake(hintBtn); return;
       }
       S().useHint(opts.playerId); updateHintLabel();
       A().sfx("pop");
-      // Reveal the first not-yet-correct letter + spell slowly.
+      // Reveal the first not-yet-correct letter + spell the word slowly.
+      // Letters only — no spoken framing.
       flashFirstLetter();
-      A().speak("The word starts with").then(() =>
-        A().speak(letterSpoken(letters[0]), { interrupt: false, rate: 0.85 })).then(() =>
-        A().wait(150)).then(() => A().spellOut(word, { sayWord: true }));
+      stopVoiceInput();
+      A().cancelVoice();
+      const seq = ++promptSeq;
+      A().spellOut(word, { sayWord: true })
+        .then(() => { if (seq === promptSeq) autoListen(); });
     }
     function flashFirstLetter() {
       const i = currentIndex();
@@ -322,6 +331,8 @@
 
     function addLetter(ch) {
       if (typed.length >= letters.length) return;
+      stopVoiceInput();  // she's typing — mic off so the letter echo can't
+                         // feed back into the recognizer as phantom letters
       typed.push(ch);
       const slot = slots[typed.length - 1];
       slot.textContent = ch.toUpperCase();
@@ -335,6 +346,7 @@
     }
     function removeLetter() {
       if (!typed.length) return;
+      stopVoiceInput();  // editing by hand — same feedback guard as addLetter
       const slot = slots[typed.length - 1];
       slot.textContent = ""; slot.classList.remove("filled");
       typed.pop();
@@ -393,13 +405,15 @@
         },
         onerror: (code) => {
           // Fatal only — "no-speech" is normal between letters and is handled
-          // by the zero-new-letters counter in onend.
+          // by the zero-new-letters counter in onend. Nothing is SPOKEN here:
+          // the bubble explains visually (no spoken instructions, ever).
           if (code === "not-allowed" || code === "service-not-allowed") {
+            voiceDenied = true;      // stop auto-opening the mic every word
             micIdle();
-            A().speak("I need permission to use the microphone. You can tap the letters instead.");
+            showMascot("No microphone — tap the letters instead!");
           } else if (code === "audio-capture") {
             micIdle();
-            A().speak("I can't hear the microphone. You can tap the letters instead.");
+            showMascot("I can't hear the microphone — tap the letters instead!");
           } else if (code === "unsupported" || code === "init" || code === "start") {
             micIdle();
           }
@@ -415,7 +429,6 @@
             if (!voiceGuided) {
               voiceGuided = true;
               showMascot("Say each letter, like: see, ay, tee. Or tap the letters!");
-              A().speak("I didn't catch the letters. Try saying each letter, like, see, ay, tee. Or tap them.");
             }
             return;
           }
@@ -426,21 +439,38 @@
       if (!rec) micIdle();
     }
 
-    function toggleVoice() {
-      if (listening) {
-        // Stop for real: flip the flag BEFORE stop() so onend can't restart.
-        // Keep whatever letters were captured; no auto-submit of a part-word.
-        micIdle();
-        if (rec) { try { rec.stop(); } catch (e) {} }
-        return;
-      }
+    // Stop capturing, silently, keeping whatever letters were heard. The flag
+    // flips BEFORE stop() so onend can't restart the session.
+    function stopVoiceInput() {
+      if (!listening) return;
+      micIdle();
+      if (rec) { try { rec.stop(); } catch (e) {} }
+    }
+
+    function startVoice() {
+      if (listening || !micBtn) return;
       listening = true;
       voiceBase = typed.join("");  // append to letters already entered
       emptySessions = 0;
       micBtn.classList.add("listening");
       setMicLabel("Listening…");
-      showMascot("I'm listening! Say each letter out loud.");
       startVoiceSession();
+    }
+
+    // Voice is the DEFAULT way to answer: the mic opens by itself once the
+    // prompt/hint finishes speaking — never DURING speech, because the
+    // recognizer would transcribe our own TTS (sentence words like "a",
+    // "are", "you" parse as letters). The button stays as a manual toggle.
+    function autoListen() {
+      if (mode !== "type" || torndown || voiceDenied) return;
+      if (!A().canListen || listening || voiceSubmitTimer) return;
+      if (typed.length >= letters.length) return;
+      startVoice();
+    }
+
+    function toggleVoice() {
+      if (listening) stopVoiceInput();
+      else startVoice();
     }
 
     /* ---------------- TILES MODE (Eddie) ---------------- */
@@ -497,7 +527,9 @@
     function submit() {
       const guess = currentGuess();
       if (guess.length < letters.length) {
-        A().speak("Keep going! Add more letters.");
+        // Not full yet — a nudge, not a lecture. No spoken instructions.
+        A().sfx("click");
+        FX().shake(slotsEl);
         return;
       }
       if (guess === word) {
@@ -509,7 +541,9 @@
         slots.forEach((s) => s.classList.add("wrong"));
         FX().shake(slotsEl);
         A().sfx("wrong");
-        const msg = pick(ENCOURAGE);
+        stopVoiceInput();
+        A().cancelVoice();             // she may have submitted mid-sentence
+        const msg = pick(ENCOURAGE);   // shown in the bubble, never spoken
         if (attempts >= 2) {
           // 2nd miss: now we model it — reveal the word and spell it aloud so
           // she can copy and succeed. (Held back until now so the first try is
@@ -519,13 +553,15 @@
             ghost.textContent = word.toUpperCase().split("").join(" ");
             ghost.classList.add("show");
           }
-          showMascot("Here it is. Let's spell it together!");
-          A().speak(msg).then(() => A().wait(220)).then(() => A().spellOut(word, { sayWord: true }));
+          showMascot(msg + " Here it is — let's spell it together!");
+          const seq = ++promptSeq;
+          A().wait(500).then(() => seq === promptSeq ? A().spellOut(word, { sayWord: true }) : null)
+            .then(() => { if (seq === promptSeq) autoListen(); });
         } else {
-          // 1st miss: encourage and re-play the word in its sentence — no
-          // spelling given away yet.
+          // 1st miss: shake + bubble, then re-play the word in its sentence —
+          // no spelling given away yet.
           showMascot(msg + " Let's listen again.");
-          A().speak(msg).then(() => A().wait(220)).then(() => sayPrompt());
+          A().wait(500).then(() => sayPrompt());
         }
         setTimeout(resetEntry, 700);
       }
@@ -580,7 +616,10 @@
     }
     FX().popup(`+${ev.xp} ⭐`, cx - 40, cy, "xp");
 
+    // Praise is VISUAL (popup) — the chime already says "correct"; the voice
+    // stays reserved for words, sentences, and letters only.
     const praise = ev.streakBonus ? `${pick(PRAISE)} ${ev.streak} in a row!` : pick(PRAISE);
+    FX().popup(praise, cx - 60, cy - 64, "xp");
     if (ev.streak === 5 || ev.streak === 10) A().sfx("streak");
 
     // queue of big celebrations (sticker / level / trophy)
@@ -597,8 +636,6 @@
     (ev.trophies || []).forEach((t) => cards.push({
       emoji: t.emoji, title: "Trophy!", sub: t.name, sfx: "fanfare", say: `You won a trophy! ${t.name}!`
     }));
-
-    A().speak(praise);
 
     if (!cards.length) { setTimeout(onDone, 950); return; }
     runCards(cards, 0);
@@ -622,7 +659,6 @@
     A().sfx(card.sfx);
     const p = S().player();
     FX().celebrate(p.theme);
-    A().speak(card.say);
     requestAnimationFrame(() => overlay.classList.add("show"));
     let closed = false;
     const close = () => {
@@ -723,7 +759,6 @@
         r.pos = Math.min(FINISH, r.pos + step);
         A().sfx("coin");
         FX().burst(window.innerWidth / 2, window.innerHeight * 0.5, "rainbow", 24);
-        A().speak(`${r.name} moves ${step === 2 ? "two spaces" : "one space"}!`);
         if (r.pos >= FINISH) { winner = r; return setTimeout(showWin, 600); }
         turn = turn === "alice" ? "eddie" : "alice";
         setTimeout(render, 1100);
@@ -766,8 +801,7 @@
       UI().app.appendChild(wrap);
     }
 
-    A().speak("Spelling race! Alice versus Eddie! Ready, set, spell!");
-    setTimeout(render, 1400);
+    setTimeout(render, 500);
   };
 
   SB.game = Game;

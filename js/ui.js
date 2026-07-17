@@ -21,25 +21,10 @@
     UI.app = document.getElementById("app");
     UI.canHover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
 
-    // Audio-driven: read button labels aloud on hover (desktop only) and
-    // on keyboard focus, so a child never needs to read.
-    if (UI.canHover) {
-      document.addEventListener("pointerover", (e) => {
-        const el = e.target.closest && e.target.closest("[data-speak]");
-        if (el && el !== UI.lastHover) {
-          UI.lastHover = el;
-          A().speak(el.getAttribute("data-speak"), { rate: 1.05, pitch: 1.1 });
-        }
-      });
-      document.addEventListener("pointerout", (e) => {
-        const el = e.target.closest && e.target.closest("[data-speak]");
-        if (el === UI.lastHover) UI.lastHover = null;
-      });
-    }
-    document.addEventListener("focusin", (e) => {
-      const el = e.target.closest && e.target.closest("[data-speak]");
-      if (el) A().speak(el.getAttribute("data-speak"), { rate: 1.05, pitch: 1.1 });
-    });
+    // NOTE: buttons used to read their labels aloud on hover/focus via
+    // [data-speak]. Removed on purpose — no spoken instructions, ever; the
+    // voice is reserved for words, sentences, and letters. The data-speak
+    // attributes remain in the DOM but nothing reads them.
 
     // First gesture unlocks audio.
     const unlock = () => { A().unlock(); };
@@ -86,15 +71,12 @@
     wrap.innerHTML =
       `<div class="bubble">${text}</div>` +
       `<div class="bee ${opts.bounce ? "bounce" : ""}">${hat}<span class="bee-emoji">🐝</span></div>`;
-    if (text && opts.speak !== false) {
-      A().sfx("buzz");
-      setTimeout(() => A().speak(text, { interrupt: opts.interrupt !== false }), 120);
-    }
+    // Bubbles are READ, not spoken — Buzzy just buzzes. The voice is reserved
+    // for words, sentences, and letters (it's too rough for chatter).
+    if (text && opts.speak !== false) A().sfx("buzz");
     return wrap;
   };
 
-  // Re-speak helper for "what can I do?" buttons.
-  UI.sayAgain = function (text) { A().speak(text); };
 
   /* ---------------- HUD (top bar) ------------------------------------- */
   UI.hud = function (opts) {
@@ -278,7 +260,6 @@
       card.addEventListener("click", () => {
         if (!unlocked) {
           A().sfx("wrong");
-          A().speak("That belt is locked. Practice more to open it!");
           SB.fx.shake(card);
           return;
         }
@@ -311,7 +292,7 @@
         ? `<span class="sticker-emoji">${s.e}</span>${count > 1 ? `<span class="sticker-x">×${count}</span>` : ""}<span class="sticker-name">${s.name}</span>`
         : `<span class="sticker-emoji q">❓</span><span class="sticker-name">???</span>`;
       if (got) cell.addEventListener("click", () => {
-        A().sfx("sticker"); A().speak(s.name);
+        A().sfx("sticker");
         SB.fx.burst(cell.getBoundingClientRect().left + 30, cell.getBoundingClientRect().top + 30, p.theme, 18);
         SB.fx.pulse(cell);
       });
@@ -345,7 +326,7 @@
          <span class="shop-cost">${owned ? (equipped ? "✅ On" : (item.type === "hat" || item.type === "theme" ? "Tap to use" : "Owned")) : `🪙 ${item.cost}`}</span>`;
       cell.addEventListener("click", () => {
         if (owned) {
-          if (item.type === "hat") { A().sfx("pop"); S().equipHat(S().currentId(), item.hat); UI.show("shop"); A().speak(equipped ? "Hat off" : "Buzzy looks great!"); }
+          if (item.type === "hat") { A().sfx("pop"); S().equipHat(S().currentId(), item.hat); UI.show("shop"); }
           else if (item.type === "theme") { A().sfx("sticker"); S().setTheme(S().currentId(), item.theme); SB.fx.celebrate(item.theme); UI.show("shop"); }
           else { A().sfx("click"); }
           return;
@@ -354,11 +335,9 @@
         if (res.ok) {
           A().sfx("coin"); A().sfx("levelup");
           SB.fx.celebrate(p.theme);
-          A().speak(`You got ${item.say}!`);
           UI.show("shop");
         } else if (res.reason === "broke") {
           A().sfx("wrong"); SB.fx.shake(cell);
-          A().speak("You need more coins. Keep spelling to earn them!");
         }
       });
       grid.appendChild(cell);
@@ -381,7 +360,7 @@
       const cell = el("button", "trophy-cell" + (has ? " got" : " missing"));
       cell.setAttribute("data-speak", has ? `${t.name}. Won!` : `${t.name}. Not yet.`);
       cell.innerHTML = `<span class="trophy-emoji">${has ? t.emoji : "🔒"}</span><span class="trophy-name">${t.name}</span>`;
-      if (has) cell.addEventListener("click", () => { A().sfx("fanfare"); A().speak(t.name); SB.fx.pulse(cell); });
+      if (has) cell.addEventListener("click", () => { A().sfx("fanfare"); SB.fx.pulse(cell); });
       grid.appendChild(cell);
     });
     wrap.appendChild(grid);
@@ -440,7 +419,6 @@
         st.letterEcho = !st.letterEcho; S().save();
         b.querySelector(".btn-label").textContent = st.letterEcho ? "On" : "Off";
         b.classList.toggle("on", st.letterEcho); b.classList.toggle("off", !st.letterEcho);
-        A().speak(st.letterEcho ? "I will say each letter" : "Letters off");
       } });
     echoRow.appendChild(echoBtn);
     card.appendChild(echoRow);
@@ -497,7 +475,7 @@
       onClick: () => {
         if (resetBtn.dataset.armed) {
           S().resetPlayer(S().currentId());
-          A().sfx("whoosh"); A().speak("All reset!");
+          A().sfx("whoosh");
           UI.show("menu");
         } else {
           resetBtn.dataset.armed = "1";
