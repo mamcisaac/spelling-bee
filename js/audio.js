@@ -423,8 +423,13 @@
   // `expect` (optional): the REMAINING letters of the answer. Recognizers love
   // to fuse spoken letter-names into a word ("el ay em" -> "lamb"); when that
   // fused word lines up with the letters we're expecting next ("lamb" vs
-  // "lamp" -> "lam"), credit the overlap. Saying the whole answer word does
-  // NOT count — she has to spell it, not say it.
+  // "lamp" -> "lam"), credit the overlap. This INCLUDES the fused word that
+  // completes the whole answer: while a child spells W-I-N-D the recognizer
+  // builds "w","wi","win" and then collapses the final result into the real
+  // word "wind" — if we refused that (because it equals the answer) the last
+  // letter would silently vanish and she'd be stuck with "win" / "des".
+  // Down side: just SAYING the word surfaces the same fused transcript, so we
+  // can't tell "spelled it" from "said it" — completing the spelling wins.
   Audio.spokenToLetters = function (transcript, expect) {
     if (!transcript) return "";
     let t = (" " + transcript.toLowerCase() + " ")
@@ -443,7 +448,9 @@
       if (/^[a-z]$/.test(tok)) { out += tok; continue; }
       // Fused-letters recovery: a non-letter word that (almost) entirely
       // matches the next expected letters is a garbled spelling, not a word.
-      if (expect && tok !== expect) {
+      // A fused word that matches the answer EXACTLY (tok === expect) is the
+      // end-of-spelling collapse — accept it so the final letter isn't dropped.
+      if (expect) {
         const rem = expect.slice(out.length);
         let cp = 0;
         while (cp < tok.length && cp < rem.length && tok[cp] === rem[cp]) cp++;
